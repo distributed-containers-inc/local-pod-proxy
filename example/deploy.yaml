@@ -1,0 +1,96 @@
+# EXAMPLE APP
+---
+
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  name: example-app
+  labels:
+    app: example-app
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: example-app
+  template:
+    metadata:
+      labels:
+        app: example-app
+    spec:
+      containers:
+      - name: example-app
+        image: gcr.io/google_containers/defaultbackend:1.4
+        ports:
+        - containerPort: 8080
+
+
+# ACTUAL APP LOGIC
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: local-pod-proxy
+
+---
+kind: ClusterRole
+apiVersion: rbac.authorization.k8s.io/v1beta1
+metadata:
+  name: local-pod-proxy
+rules:
+  - apiGroups:
+      - ""
+    resources:
+      - pods
+    verbs: ["list", "get"]
+
+---
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1beta1
+metadata:
+  name: local-pod-proxy
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: local-pod-proxy
+subjects:
+- kind: ServiceAccount
+  name: local-pod-proxy
+  namespace: default
+
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: local-pod-proxy
+  labels:
+    app: local-pod-proxy
+spec:
+  selector:
+    matchLabels:
+      app: local-pod-proxy
+  template:
+    metadata:
+      labels:
+        app: local-pod-proxy
+    spec:
+      serviceAccountName: local-pod-proxy
+      hostNetwork: true # IMPORTANT
+      containers:
+      - name: local-proxy
+        image: knorg/local-pod-proxy:1.0.0
+        env:
+        - name: MY_POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        - name: MY_HOST_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.hostIP
+        - name: LABEL_SELECTOR
+          value: app=example-app
+        - name: TARGET_PORT
+          value: "8080"
+        - name: SOURCE_PORT
+          value: "4000"
